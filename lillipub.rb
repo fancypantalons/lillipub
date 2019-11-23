@@ -19,12 +19,13 @@ require "logger"
 
 $log = Logger.new("lillipub.log");
 $log.level = Logger::DEBUG
+$config = YAML.load_file("_config.yml")
+$cgi = nil
 
-#######
-
-#
-# Utilities
-#
+#############################
+##
+## Utilities
+##
 
 # Remove the specified key from the given hash and execute the
 # block on the extracted value.
@@ -35,10 +36,6 @@ def remove_and_do(hash, key, &block)
   end
 end
 
-#
-# Base request processing methods.
-#
-
 # Pull headers out of the environment and return as a hash.
 def get_headers()
   ENV
@@ -47,23 +44,85 @@ def get_headers()
     .to_h
 end
 
+# Return a merged version of the front matter key mappings
+def get_mappings(type)
+  $config["front_matter"]["all"].merge($config["front_matter"][type])
+end
+
+#############################
 ##
-## Operations
+## Post listing, retrieval, and management
 ##
 
-#
-# Argument parsing
-#
+def posts_path
+  File.join($config["site_location"], "_posts")
+end
+
+def list_posts(before=nil, after=nil)
+  Dir.glob(File.join(posts_path, "*")).sort.reverse.map { |fn| File.basename(fn, ".md") }
+end
+
+def read_post(slug)
+  fm = nil
+  content = nil
+
+  File.open(File.join(posts_path, slug) + ".md").each do |line|
+    if line.start_with? "---"
+      if fm == nil
+        fm = line
+      else
+        content = ""
+      end
+
+      next
+    end
+
+    if content == nil
+      fm += line
+    else
+      content += line
+    end
+  end
+
+  post = {
+    :front_matter => YAML.load(fm),
+    :content => content,
+    :slug => slug
+  }
+
+  $config["front_matter"]["all"].each do |key, val|
+    if val.instance_of? Symbol and val.id2name == "type"
+      post[:type] = post[:front_matter][key]
+    end
+  end
+
+  post
+end
+
+def write_post(post)
+  path = File.join($config["site_location"], "_posts", post[:slug]) + ".md"
+
+  File.open(path, "w") { |file|
+    file.write(post[:front_matter].to_yaml)
+    file.write("---\n")
+    file.write(post[:content])
+  }
+end
+
+#############################
+##
+## Argument parsing
+##
 
 # Returns the URL parameters encoded as the equivalent JSON body.
-def decode_url_params(cgi)
+def decode_entry_url_params()
   message = {
     "type" => "h-entry",
     "properties" => {}
   }
 
-  cgi.params.keys.each do | key |
-    message["properties"][key.sub(/\[\]$/, "")] = cgi.params[key]
+  $cgi.params.keys.each do | key |
+    message["properties"][key.sub(/\[\]$/, "")] = $cgi.params[key]
   end
 
   message["properties"].delete("h")
@@ -71,38 +130,19 @@ def decode_url_params(cgi)
   message
 end
 
-# Checks if the "h" parameter is among the URL params.
-#
-# If so, parses URL params into the JSON equivalent.
-#
-# Otherwise parses the PmeOST request body as a JSON object.
-def get_post_contents(headers, cgi)
-  if ! headers["content_type"].start_with? "multipart/form-data"
-    begin
-      JSON.parse(STDIN.read)
-    rescue JSON::ParserError
-      print cgi.header("status" => "400 Bad Request");
-      exit(0);
-    end
-  else
-    decode_url_params(cgi);
-  end
-end
+#############################
+##
+## Authentication
+##
 
-#
-# Authentication
-#
-
-def authenticate(config, headers)
-  return true
-
+def authenticate(headers)
   if ! headers.key? "authorization"
     $log.error("No authorization header provided.");
 
     return false
   end
 
-  url = config["token_endpoint"]
+  url = $config["token_endpoint"]
   token = headers["authorization"]
 
   $log.debug("Sending auth request using #{token} to #{url}")
@@ -132,22 +172,115 @@ def authenticate(config, headers)
   false
 end
 
-#
-# Micropub query operations
-#
+#############################
+##
+## Microsub operations
+##
 
-def query_syndicate(config, cgi, message)
+def query_channels(message)
+  response = {
+    "channels" => [
+      {
+        "uid" => "notifications",
+        "name" => "Notifications"
+      },
+      {
+        "uid" => $config["feed"]["uid"],
+        "name" => $config["feed"]["name"]
+      }
+    ]
+  }
+
+  print $cgi.header("content-type" => "application/json")
+  print response.to_json
 end
 
-def query_config(config, cgi, message)
+def query_timeline(message)
+  items = []
+  paging = {}
+  response = { "items" => items, "paging" => paging }
+
+  slugs = list_posts()
+
+  start_idx = 0
+  end_idx = 5
+
+  if message.key? "before"
+    end_idx = slugs.index(message["before"]) - 1
+    start_idx = end_idx - 5
+  end
+
+  if message.key? "after"
+    start_idx = slugs.index(message["after"]) + 1
+    end_idx = start_idx + 5
+  end
+
+  start_idx = start_idx.clamp(0, slugs.length - 1)
+  end_idx = end_idx.clamp(0, slugs.length - 1)
+
+  slugs[start_idx..end_idx].each do |slug|
+    item = {}
+    post = read_post(slug)
+    mappings = get_mappings(post[:type])
+
+    mappings.each do |key, val|
+      if val.instance_of? Symbol and post[:front_matter].key? key
+        item[val.id2name] = post[:front_matter][key]
+      end
+    end
+
+    item["type"] = "entry"
+    item["content"] = { "text" => post[:content] }
+    item["uid"] = post[:slug]
+
+    items.append(item)
+  end
+
+  if start_idx > 0
+    paging["before"] = slugs[start_idx]
+  end
+
+  if end_idx < slugs.length - 1
+    paging["after"] = slugs[end_idx]
+  end
+
+  $log.info(response)
+
+  print $cgi.header("content-type" => "application/json")
+  print response.to_json
 end
 
-def query_source(config, cgi, message)
+##
+## Micropub query operations
+##
+
+def decode_query_url_params()
+  message = $cgi.params
+
+  keys = [ "action", "before", "after", "channel" ]
+
+  keys.each do |key|
+    if message.fetch(key, "").class == Array
+      message[key] = message[key].first
+    end
+  end
+
+  message
 end
 
-#
-# Micropub CRUD operations
-#
+def query_syndicate(message)
+end
+
+def query_config(message)
+end
+
+def query_source(message)
+end
+
+#############################
+##
+## Micropub CRUD operations
+##
 
 # The properties in the message are a bit... messy.  This method does a bunch
 # of work to clean things up a bit so things are neater when we do the
@@ -186,10 +319,10 @@ def normalize_properties(message)
   published = message["properties"]["published"]
 
   if message["properties"].key? "name"
-    message["entry-type"] = "article"
+    message["properties"]["type"] = "article"
   else
     # This is a hack!  For notes we synthesize a name from the content.
-    message["entry-type"] = "note"
+    message["properties"]["type"] = "note"
 
     name = message["properties"]["content"]
 
@@ -216,20 +349,13 @@ def normalize_properties(message)
   message
 end
 
-def to_post(config, message)
+def to_post(message)
   entry = {
+    :type => message["properties"]["type"],
     :front_matter => {},
   }
 
-  if message["properties"].key? "name"
-    entry[:type] = "article"
-  else
-    entry[:type] = "note"
-  end
-
-  mappings = config["front_matter"]["all"].merge(config["front_matter"][message["entry-type"]])
-
-  mappings.each do |key, val|
+  get_mappings(entry[:type]).each do |key, val|
     if val.instance_of? Symbol
       k = val.id2name
 
@@ -243,46 +369,61 @@ def to_post(config, message)
 
   entry[:content] = message["properties"]["content"]
   entry[:slug] = message["slug"]
-  entry[:front_matter]["date"] = entry[:front_matter]["date"].strftime(config["date_format"])
+  entry[:front_matter]["date"] = entry[:front_matter]["date"].strftime($config["date_format"])
 
   entry
 end
 
-def write_post(config, post)
-  path = File.join(config["site_location"], "_posts", post[:slug]) + ".md"
-
-  File.open(path, "w") { |file|
-    file.write(post[:front_matter].to_yaml)
-    file.write("---\n")
-    file.write(post[:content])
-  }
-end
-
-def create(config, cgi, message)
+def create(message)
   normalize_properties(message)
+  post = to_post(message)
+  date = Time.parse(post[:front_matter]["date"])
 
-  print cgi.header
+  url = $config["site_url"] + date.strftime("/%Y/%m/%d/") + post[:slug]
 
-  post = to_post(config, message)
+  $log.info(url)
+
+  print $cgi.header(
+    "status" => "201 Created",
+    "Location" => url
+  )
+
   $log.debug(post)
-  write_post(config, post)
+  write_post(post)
 end
 
-def update(config, cgi, message)
-  print cgi.header
-  print message["type"]
+def update(message)
+  print $cgi.header
 end
 
-def delete(config, cgi, message)
-  print cgi.header
-  print message["type"]
+def delete(message)
+  print $cgi.header
 end
 
-#######
 
-config = YAML.load_file("_config.yml")
-cgi = CGI.new
+#############################
+##
+## Entry-point for script
+##
+
 headers = get_headers
+body = nil
+
+$log.info(headers)
+if ! (headers.key? "content_type" and headers["content_type"].start_with? "multipart/form-data")
+  begin
+    stdin = STDIN.read
+
+    if stdin != ""
+      body = JSON.parse(stdin)
+    end
+  rescue JSON::ParserError
+    print CGI.new.header("status" => "400 Bad Request");
+    exit(0);
+  end
+end
+
+$cgi = CGI.new
 
 #
 # Query types (parameter 'q')
@@ -290,27 +431,42 @@ headers = get_headers
 #   config
 #   source
 
-message = get_post_contents(headers, cgi);
+$log.info(headers);
+$log.info($cgi.params);
+$log.info(body);
 
-callbacks = {
-  "create" => lambda { create(config, cgi, message) },
-  "update" => lambda { update(config, cgi, message) },
-  "delete" => lambda { delete(config, cgi, message) },
-  "syndicate-to" => lambda { query_syndicate(config, cgi, message) },
-  "config" => lambda { query_config(config, cgi, message) },
-  "source" => lambda { query_source(config, cgi, message) }
-}
+if $cgi.params.key? "h"
+  message = decode_entry_url_params();
+elsif $cgi.params.key? "q" or $cgi.params.key? "action"
+  message = decode_query_url_params();
+else
+  message = body
+end
 
-if !authenticate(config, headers)
-  print cgi.header("status" => "401 Unauthorized");
+if !authenticate(headers)
+  print $cgi.header("status" => "401 Unauthorized");
   exit(0);
 end
 
+$log.info(message)
 
-if cgi.params.key? "q"
+callbacks = {
+  "create" => lambda { create(message) },
+  "update" => lambda { update(message) },
+  "delete" => lambda { delete(message) },
+
+  "channels" => lambda { query_channels(message) },
+  "timeline" => lambda { query_timeline(message) },
+
+  "syndicate-to" => lambda { query_syndicate(message) },
+  "config" => lambda { query_config(message) },
+  "source" => lambda { query_source(message) }
+}
+
+if $cgi.params.key? "q"
   # For syndicate-to, config, source, etc.
 
-  operation = cgi.params["q"].first
+  operation = $cgi.params["q"].first
 elsif message.key? "action"
   # For update/delete operations
 
@@ -321,4 +477,4 @@ else
   operation = "create"
 end
 
-callbacks[operation].call();
+callbacks[operation].call()
