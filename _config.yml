@@ -1,0 +1,19 @@
+url: "http://blog.b-ark.ca"
+media_endpoint: "https://media.org/endpoint"
+token_endpoint: "https://tokens.indieauth.com/token"
+site_location: "/home/brettk/blog"
+date_format: "%Y-%m-%d %H:%M:%S %z"
+
+front_matter:
+  article:
+    layout: article
+    category: :category
+  note:
+    layout: note
+    summary: :summary
+    syndicate_to: [ twitter ]
+  all:
+    author: "Brett Kosinski"
+    date: :published
+    title: :name
+    in_reply_to: :in-reply-to
