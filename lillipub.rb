@@ -386,14 +386,9 @@ def create(message)
 
   url = $config["site_url"] + date.strftime("/%Y/%m/%d/") + post[:slug]
 
-  $log.info(url)
-
-  print $cgi.header(
-    "status" => "201 Created",
-    "Location" => url
-  )
-
   $log.debug(post)
+
+  print $cgi.header("status" => "201 Created", "Location" => url)
   write_post(post)
 end
 
@@ -415,7 +410,9 @@ headers = get_headers
 body = nil
 
 $log.info(headers)
-if ! (headers.key? "content_type" and headers["content_type"].start_with? "multipart/form-data")
+if ! headers.key? "content_type" or
+   ! (headers["content_type"].start_with? "multipart/form-data" or
+      headers["content_type"].start_with? "application/x-www-form-urlencoded")
   begin
     stdin = STDIN.read
 
