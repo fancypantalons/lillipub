@@ -12,7 +12,6 @@ feed:
 
 front_matter:
   article:
-    category: :category
     summary: :summary
   note:
     syndicate_to: [ twitter ]
@@ -24,7 +23,8 @@ front_matter:
     bookmark_of: :bookmark-of
   all:
     layout: :type
+    title: :name
     author: "Brett Kosinski"
     date: :published
-    title: :name
+    category: :category
     in_reply_to: :in-reply-to
