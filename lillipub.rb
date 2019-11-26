@@ -17,9 +17,11 @@ require "cgi"
 require "time"
 require "logger"
 
-$log = Logger.new("lillipub.log");
-$log.level = Logger::DEBUG
 $config = YAML.load_file("_config.yml")
+
+$log = Logger.new($config["log_path"]);
+$log.level = Logger::DEBUG
+
 $cgi = nil
 
 #############################
