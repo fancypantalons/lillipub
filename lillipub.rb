@@ -319,7 +319,16 @@ def normalize_properties(message)
 
   published = message["properties"]["published"]
 
-  if message["properties"].key? "name"
+  if message["properties"].key? "like-of"
+    message["properties"]["type"] = "like"
+    message["properties"]["name"] = message["properties"]["like-of"]
+  elsif message["properties"].key? "repost-of"
+    message["properties"]["type"] = "repost"
+    message["properties"]["name"] = message["properties"]["repost-of"]
+  elsif message["properties"].key? "bookmark-of"
+    message["properties"]["type"] = "bookmark"
+    message["properties"]["name"] = message["properties"]["bookmark-of"]
+  elsif message["properties"].key? "name"
     message["properties"]["type"] = "article"
   else
     # This is a hack!  For notes we synthesize a name from the content.
