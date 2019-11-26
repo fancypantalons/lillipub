@@ -298,7 +298,6 @@ def scrub(hash)
   transformers = {
     "type" => first, "name" => first, "summary" => first, "content" => first,
     "bookmark-of" => first, "like-of" => first, "repost-of" => first, "in-reply-to"=> first,
-    "mp-slug" => first,
     "published" => lambda { |val| Time.parse(first.call(val)) }
   }
 
