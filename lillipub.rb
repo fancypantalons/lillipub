@@ -62,11 +62,11 @@ def list_posts(before=nil, after=nil)
   Dir.glob(File.join(posts_path, "*")).sort.reverse.map { |fn| File.basename(fn, ".md") }
 end
 
-def read_post(slug)
+def read_post(id)
   fm = nil
   content = nil
 
-  File.open(File.join(posts_path, slug) + ".md").each do |line|
+  File.open(File.join(posts_path, id) + ".md").each do |line|
     if line.start_with? "---"
       if fm == nil
         fm = line
@@ -87,7 +87,8 @@ def read_post(slug)
   post = {
     :front_matter => YAML.load(fm),
     :content => content,
-    :slug => slug
+    :slug => id.split("-").last,
+    :id => id
   }
 
   $config["front_matter"]["all"].each do |key, val|
@@ -100,7 +101,7 @@ def read_post(slug)
 end
 
 def write_post(post)
-  path = File.join($config["site_location"], "_posts", post[:slug]) + ".md"
+  path = File.join($config["site_location"], "_posts", post[:id]) + ".md"
 
   File.open(path, "w") { |file|
     file.write(post[:front_matter].to_yaml)
@@ -200,27 +201,27 @@ def query_timeline(message)
   paging = {}
   response = { "items" => items, "paging" => paging }
 
-  slugs = list_posts()
+  ids = list_posts()
 
   start_idx = 0
   end_idx = 5
 
   if message.key? "before"
-    end_idx = slugs.index(message["before"]) - 1
+    end_idx = ids.index(message["before"]) - 1
     start_idx = end_idx - 5
   end
 
   if message.key? "after"
-    start_idx = slugs.index(message["after"]) + 1
+    start_idx = ids.index(message["after"]) + 1
     end_idx = start_idx + 5
   end
 
-  start_idx = start_idx.clamp(0, slugs.length - 1)
-  end_idx = end_idx.clamp(0, slugs.length - 1)
+  start_idx = start_idx.clamp(0, ids.length - 1)
+  end_idx = end_idx.clamp(0, ids.length - 1)
 
-  slugs[start_idx..end_idx].each do |slug|
+  ids[start_idx..end_idx].each do |id|
     item = {}
-    post = read_post(slug)
+    post = read_post(id)
     mappings = get_mappings(post[:type])
 
     mappings.each do |key, val|
@@ -231,17 +232,17 @@ def query_timeline(message)
 
     item["type"] = "entry"
     item["content"] = { "text" => post[:content] }
-    item["uid"] = post[:slug]
+    item["uid"] = post[:id]
 
     items.append(item)
   end
 
   if start_idx > 0
-    paging["before"] = slugs[start_idx]
+    paging["before"] = id[start_idx]
   end
 
-  if end_idx < slugs.length - 1
-    paging["after"] = slugs[end_idx]
+  if end_idx < ids.length - 1
+    paging["after"] = ids[end_idx]
   end
 
   $log.info(response)
@@ -333,18 +334,13 @@ def normalize_properties(message)
     message["properties"]["name"] = name
   end
 
-  if message.key? "mp-slug"
-    remove_and_do(message, "mp-slug") do |val|
-      message["slug"] = first(val)
-    end
-  else
-    message["slug"] =
-      published.strftime("%Y-%m-%d-") +
-      message["properties"]["name"]
-        .gsub(/[^A-Za-z0-9-]+/, '-')
-        .gsub(/-*$/, '')
-        .downcase
-  end
+  message["slug"] =
+    message["properties"]["name"]
+      .gsub(/[^A-Za-z0-9-]+/, '-')
+      .gsub(/-*$/, '')
+      .downcase
+
+  message["id"] = published.strftime("%Y-%m-%d-") + message["slug"]
 
   message
 end
@@ -368,6 +364,7 @@ def to_post(message)
   end
 
   entry[:content] = message["properties"]["content"]
+  entry[:id] = message["id"]
   entry[:slug] = message["slug"]
   entry[:front_matter]["date"] = entry[:front_matter]["date"].strftime($config["date_format"])
 
