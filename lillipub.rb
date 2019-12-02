@@ -369,14 +369,19 @@ def to_post(message)
         entry[:front_matter][key] = message["properties"][k]
       end
     else
-      entry[:front_matter][key] = val;
+      entry[:front_matter][key] = val
     end
   end
 
   entry[:content] = message["properties"]["content"]
   entry[:id] = message["id"]
   entry[:slug] = message["slug"]
-  entry[:front_matter]["date"] = entry[:front_matter]["date"].strftime($config["date_format"])
+
+  date = entry[:front_matter]["date"] || Time.now
+
+  entry[:front_matter]["date"] = date.strftime($config["date_format"])
+
+  $log.info("Post: #{entry}")
 
   entry
 end
