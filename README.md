@@ -34,14 +34,15 @@ For example, consider the following:
 front_matter:
   article:
     summary: :summary
-  note:
-    syndicate_to: [ twitter ]
   like:
     like_of: :like-of
   repost:
     repost_of: :repost-of
   bookmark:
     bookmark_of: :bookmark-of
+  categories:
+    tweet:
+      syndicate_to: [ twitter ]
   all:
     layout: :type
     title: :name

@@ -47,8 +47,15 @@ def get_headers()
 end
 
 # Return a merged version of the front matter key mappings
-def get_mappings(type)
-  $config["front_matter"]["all"].merge($config["front_matter"][type])
+def get_mappings(type, categories)
+  mappings = $config.dig("front_matter", "all") || {}
+  mappings = mappings.merge($config.dig("front_matter", type) || {})
+
+  (categories || []).each do |category|
+    mappings = mappings.merge($config.dig("front_matter", "categories", category) || {})
+  end
+
+  mappings
 end
 
 #############################
@@ -224,7 +231,7 @@ def query_timeline(message)
   ids[start_idx..end_idx].each do |id|
     item = {}
     post = read_post(id)
-    mappings = get_mappings(post[:type])
+    mappings = get_mappings(post[:type], post[:category])
 
     mappings.each do |key, val|
       if val.instance_of? Symbol and post[:front_matter].key? key
@@ -358,10 +365,10 @@ end
 def to_post(message)
   entry = {
     :type => message["properties"]["type"],
-    :front_matter => {},
+    :front_matter => {}
   }
 
-  get_mappings(entry[:type]).each do |key, val|
+  get_mappings(entry[:type], message["properties"]["category"]).each do |key, val|
     if val.instance_of? Symbol
       k = val.id2name
 
