@@ -9,6 +9,7 @@ gemfile do
 
   gem "liquid"
   gem "typhoeus"
+  gem "mimemagic"
 end
 
 require "json"
@@ -16,6 +17,7 @@ require "yaml"
 require "cgi"
 require "time"
 require "logger"
+require "securerandom"
 
 $config = YAML.load_file("_config.yml")
 
@@ -278,10 +280,32 @@ def decode_query_url_params()
   message
 end
 
+def decode_upload_params()
+  file = $cgi.params["file"].first
+
+  message = { "file" => file }
+
+  return message
+end
+
+def decode_params(cgi, body)
+  if cgi.params.key? "h"
+    return decode_entry_url_params()
+  elsif cgi.params.key? "q" or $cgi.params.key? "action"
+    return decode_query_url_params()
+  elsif cgi.params.key? "file"
+    return decode_upload_params()
+  else
+    return body
+  end
+end
+
 def query_syndicate(message)
 end
 
 def query_config(message)
+  print $cgi.header("content-type" => "application/json")
+  print ({ "media-endpoint" => $config["media_endpoint"] }).to_json
 end
 
 def query_source(message)
@@ -307,7 +331,8 @@ def scrub(hash)
   transformers = {
     "type" => first, "name" => first, "summary" => first, "content" => first,
     "bookmark-of" => first, "like-of" => first, "repost-of" => first, "in-reply-to"=> first,
-    "published" => lambda { |val| Time.parse(first.call(val)) }
+    "published" => lambda { |val| Time.parse(first.call(val)) },
+    "photo" => first
   }
 
   hash.keys.each do |key|
@@ -320,6 +345,8 @@ end
 def normalize_properties(message)
   scrub(message)
   scrub(message["properties"])
+
+  message["properties"]["content"] ||= ""
 
   if ! (message["properties"].key? "published")
     message["properties"]["published"] = Time.now
@@ -357,6 +384,10 @@ def normalize_properties(message)
       .gsub(/-*$/, '')
       .downcase
 
+  if message["slug"] == ""
+    message["slug"] = Time.now.strftime("%H-%M-%S")
+  end
+
   message["id"] = published.strftime("%Y-%m-%d-") + message["slug"]
 
   message
@@ -386,7 +417,7 @@ def to_post(message)
 
   date = entry[:front_matter]["date"] || Time.now
 
-  entry[:front_matter]["date"] = date.strftime($config["date_format"])
+  entry[:front_matter]["date"] = date
 
   if $config["add_type_category"]
     cats = entry[:front_matter]["category"] || []
@@ -406,7 +437,13 @@ end
 def create(message)
   normalize_properties(message)
   post = to_post(message)
-  date = Time.parse(post[:front_matter]["date"])
+  date = post[:front_matter]["date"]
+
+  if message["properties"].key? "photo"
+    image = store_file(message["properties"]["photo"], post[:id])
+
+    post[:front_matter]["image"] = image[:relative_url]
+  end
 
   url = $config["site_url"] + date.strftime("/%Y/%m/%d/") + post[:slug]
 
@@ -424,6 +461,84 @@ def delete(message)
   print $cgi.header
 end
 
+#############################
+##
+## Media endpoint operations
+##
+
+def store_file(file, post_id)
+  temp = Tempfile.new()
+
+  begin
+    IO::copy_stream(file, temp)
+    temp.close
+    temp.open
+
+    mimetype = MimeMagic.by_magic(temp)
+
+    $log.info("Detected mime: #{mimetype.extensions}")
+
+    uuid = SecureRandom.uuid
+
+    media_path = $config.dig("media_paths", mimetype.image? ? "images" : "files")
+    filename = uuid + "." + mimetype.extensions.last
+
+    path = File.join($config["site_location"], media_path, filename)
+    relative_url = "/" + File.join(media_path, filename)
+    url = File.join($config["site_url"], relative_url)
+
+    begin
+      metadata = YAML.load_file($config["media_metadata"]) || []
+    rescue
+      metadata = []
+    end
+
+    record = {
+      :date => Time.now,
+      :name => filename,
+      :path => path,
+      :relative_url => relative_url,
+      :url => url,
+      :post => post_id
+    }
+    metadata << record
+
+    File.open($config["media_metadata"], "wb") { |f|
+      f.puts YAML.dump(metadata)
+    }
+
+    IO::copy_stream(temp.path, path)
+
+    return record
+  ensure
+    temp.close
+    temp.unlink
+  end
+end
+
+def upload(message)
+  record = store_file(message["file"], nil)
+
+  print $cgi.header("status" => "201 Created", "Location" => record[:url])
+end
+
+def query_last(message)
+  response = {}
+  last = nil
+
+  begin
+    metadata = YAML.load_file($config["media_metadata"]) || []
+    last = metadata.last
+  rescue
+  end
+
+  if (Time.now - last[:date]) < 300
+    response["url"] = last[:url]
+  end
+
+  print $cgi.header("content-type" => "application/json")
+  print response.to_json
+end
 
 #############################
 ##
@@ -457,24 +572,14 @@ $cgi = CGI.new
 #   config
 #   source
 
-$log.info(headers);
-$log.info($cgi.params);
-$log.info(body);
+message = decode_params($cgi, body)
 
-if $cgi.params.key? "h"
-  message = decode_entry_url_params();
-elsif $cgi.params.key? "q" or $cgi.params.key? "action"
-  message = decode_query_url_params();
-else
-  message = body
-end
+$log.info("Message: #{message}")
 
 if !authenticate(headers)
   print $cgi.header("status" => "401 Unauthorized");
   exit(0);
 end
-
-$log.info(message)
 
 callbacks = {
   "create" => lambda { create(message) },
@@ -486,17 +591,23 @@ callbacks = {
 
   "syndicate-to" => lambda { query_syndicate(message) },
   "config" => lambda { query_config(message) },
-  "source" => lambda { query_source(message) }
+  "source" => lambda { query_source(message) },
+  "upload" => lambda { upload(message) },
+  "last" => lambda { query_last(message) }
 }
 
 if $cgi.params.key? "q"
   # For syndicate-to, config, source, etc.
 
   operation = $cgi.params["q"].first
-elsif message.key? "action"
+elsif $cgi.params.key? "action"
   # For update/delete operations
 
   operation = message["action"]
+elsif $cgi.params.key? "file"
+  # This is a file upload!
+
+  operation = "upload"
 else
   # Default when we get a straight post of content.
 
