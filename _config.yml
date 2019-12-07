@@ -3,8 +3,14 @@ log_path: "lillipub.log"
 site_location: "/home/brettk/blog"
 site_url: "http://blog.b-ark.ca"
 
-media_endpoint: "https://media.org/endpoint"
+media_endpoint: "http://micropub.b-ark.ca/lillipub.rb"
 token_endpoint: "https://tokens.indieauth.com/token"
+
+media_metadata: "/home/brettk/blog/assets/media.yaml"
+
+media_paths:
+  images: "assets/images"
+  files: "assets/files"
 
 date_format: "%Y-%m-%d %H:%M:%S %z"
 
