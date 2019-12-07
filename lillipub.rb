@@ -419,16 +419,6 @@ def to_post(message)
 
   entry[:front_matter]["date"] = date
 
-  if $config["add_type_category"]
-    cats = entry[:front_matter]["category"] || []
-
-    if ! cats.include? entry[:type]
-      cats << entry[:type]
-    end
-
-    entry[:front_matter]["category"] = cats
-  end
-
   $log.info("Post: #{entry}")
 
   entry
