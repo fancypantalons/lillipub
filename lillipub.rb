@@ -332,7 +332,7 @@ def scrub(hash)
     "type" => first, "name" => first, "summary" => first, "content" => first,
     "bookmark-of" => first, "like-of" => first, "repost-of" => first, "in-reply-to"=> first,
     "published" => lambda { |val| Time.parse(first.call(val)) },
-    "photo" => first
+    "photo" => first, "read-of" => first, "read-status" => first
   }
 
   hash.keys.each do |key|
@@ -363,6 +363,29 @@ def normalize_properties(message)
   elsif message["properties"].key? "bookmark-of"
     message["properties"]["type"] = "bookmark"
     message["properties"]["name"] = message["properties"]["bookmark-of"]
+  elsif message["properties"].key? "read-of"
+    message["properties"]["type"] = "read"
+    message["properties"]["read-status"] = message["properties"]["read-status"]
+
+    readprops = message["properties"]["read-of"]["properties"]
+    title = readprops["name"].first
+
+    message["properties"]["title"] = title
+
+    uidparts = readprops.fetch("uid", [""]).first.split(":")
+
+    if uidparts.length > 1
+      message["properties"][uidparts[0]] = uidparts[1]
+    end
+
+    case message["properties"]["read-status"]
+    when "to-read"
+      message["properties"]["name"] = "Want to read #{title}"
+    when "reading"
+      message["properties"]["name"] = "Currently reading #{title}"
+    when "finished"
+      message["properties"]["name"] = "Finished reading #{title}"
+    end
   elsif message["properties"].key? "name"
     message["properties"]["type"] = "article"
   else

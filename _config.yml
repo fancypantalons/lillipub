@@ -27,6 +27,9 @@ front_matter:
     repost_of: :repost-of
   bookmark:
     bookmark_of: :bookmark-of
+  read:
+    isbn: :isbn
+    status: :read-status
   categories:
     tweet:
       syndicate_to: [ twitter ]
