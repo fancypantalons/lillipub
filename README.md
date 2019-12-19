@@ -23,6 +23,15 @@ Lillipub supports specific handling of the following content types:
   - Bookmark
   - Like
   - Repost
+  - Photos
+  - Read
+
+### File uploads and media endpoint
+
+Lillipub supports basic multipart form POST file uploads, as well as acting as a standalone media endpoint, with a couple of restrictions:
+
+  - No support for alt text.
+  - No support for specifying URLs to externally hosted content.
 
 ### Front matter mapping
 
