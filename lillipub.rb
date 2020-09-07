@@ -628,3 +628,8 @@ else
 end
 
 callbacks[operation].call()
+
+# Lastly, if a command was registered for this action, invoke it
+cmd = $config.dig("commands", operation) || nil
+
+system(*cmd) if (! cmd.nil?)

@@ -8,6 +8,16 @@ token_endpoint: "https://tokens.indieauth.com/token"
 
 media_metadata: "/home/brettk/blog/assets/media.yaml"
 
+commands:
+  create:
+    - "/usr/bin/git"
+    - "--work-tree=/home/brettk/blog"
+    - "--git-dir=/home/brettk/git/blog"
+    - "commit"
+    - "-a"
+    - "-m"
+    - "'Micropub post'"
+
 media_paths:
   images: "assets/images"
   files: "assets/files"
