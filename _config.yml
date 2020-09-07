@@ -10,13 +10,7 @@ media_metadata: "/home/brettk/blog/assets/media.yaml"
 
 commands:
   create:
-    - "/usr/bin/git"
-    - "--work-tree=/home/brettk/blog"
-    - "--git-dir=/home/brettk/git/blog"
-    - "commit"
-    - "-a"
-    - "-m"
-    - "'Micropub post'"
+    - "/usr/bin/git --work-tree=/home/brettk/blog --git-dir=/home/brettk/git/blog/.git add -A && /usr/bin/git --work-tree=/home/brettk/blog --git-dir=/home/brettk/git/blog/.git commit -m 'Micropub post'"
 
 media_paths:
   images: "assets/images"
