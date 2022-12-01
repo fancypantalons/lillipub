@@ -456,6 +456,10 @@ def create(message)
     image = store_file(message["properties"]["photo"], post[:id])
 
     post[:front_matter]["image"] = image[:relative_url]
+
+    if not message["properties"]["mp-photo-alt"].empty?
+      post[:front_matter]["alt"] = message["properties"]["mp-photo-alt"].first
+    end
   end
 
   url = $config["site_url"] + date.strftime("/%Y/%m/%d/") + post[:slug]
