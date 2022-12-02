@@ -332,7 +332,7 @@ def scrub(hash)
     "type" => first, "name" => first, "summary" => first, "content" => first,
     "bookmark-of" => first, "like-of" => first, "repost-of" => first, "in-reply-to"=> first,
     "published" => lambda { |val| Time.parse(first.call(val)) },
-    "photo" => first, "read-of" => first, "read-status" => first
+    "read-of" => first, "read-status" => first
   }
 
   hash.keys.each do |key|
@@ -416,51 +416,68 @@ def normalize_properties(message)
   message
 end
 
+def process_photos(message, post)
+  images = []
+
+  photos = message["properties"]["photo"] || []
+  alts = message["properties"]["mp-photo-alt"] || []
+
+  photos.each_with_index do |photo, index|
+    file = store_file(photo, post[:id])
+
+    image = { "path" => file[:relative_url] }
+
+    if not (alts[index] || "").empty?
+      image["alt"] = alts[index]
+    end
+
+    images.push(image)
+  end
+
+  return images
+end
+
 def to_post(message)
-  entry = {
+  post = {
     :type => message["properties"]["type"],
     :front_matter => {}
   }
 
-  get_mappings(entry[:type], message["properties"]["category"]).each do |key, val|
-    if val.instance_of? Symbol
-      k = val.id2name
+  post[:content] = message["properties"]["content"]
+  post[:id] = message["id"]
+  post[:slug] = message["slug"]
 
-      if message["properties"].key? k
-        entry[:front_matter][key] = message["properties"][k]
+  date = post[:front_matter]["date"] || Time.now
+
+  post[:front_matter]["date"] = date
+
+  get_mappings(post[:type], message["properties"]["category"]).each do |key, val|
+    if val.instance_of? Symbol
+      source_key = val.id2name
+
+      if message["properties"].key? source_key
+        if (source_key == "photo")
+          source_val = process_photos(message, post)
+        else
+          source_val = message["properties"][source_key]
+        end
+
+        post[:front_matter][key] = source_val
       end
     else
-      entry[:front_matter][key] = val
+      post[:front_matter][key] = val
     end
   end
 
-  entry[:content] = message["properties"]["content"]
-  entry[:id] = message["id"]
-  entry[:slug] = message["slug"]
+  $log.info("Post: #{post}")
 
-  date = entry[:front_matter]["date"] || Time.now
-
-  entry[:front_matter]["date"] = date
-
-  $log.info("Post: #{entry}")
-
-  entry
+  post
 end
 
 def create(message)
   normalize_properties(message)
   post = to_post(message)
   date = post[:front_matter]["date"]
-
-  if message["properties"].key? "photo"
-    image = store_file(message["properties"]["photo"], post[:id])
-
-    post[:front_matter]["image"] = image[:relative_url]
-
-    if not message["properties"]["mp-photo-alt"].empty?
-      post[:front_matter]["alt"] = message["properties"]["mp-photo-alt"].first
-    end
-  end
 
   url = $config["site_url"] + date.strftime("/%Y/%m/%d/") + post[:slug]
 
