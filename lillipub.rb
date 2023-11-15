@@ -262,6 +262,14 @@ def query_timeline(message)
   print response.to_json
 end
 
+def query_categories(message)
+  print $cgi.header("content-type" => "application/json")
+
+  File.open($config["categories"]).each do |line|
+    print line
+  end
+end
+
 ##
 ## Micropub query operations
 ##
@@ -622,6 +630,7 @@ callbacks = {
 
   "channels" => lambda { query_channels(message) },
   "timeline" => lambda { query_timeline(message) },
+  "category" => lambda { query_categories(message) },
 
   "syndicate-to" => lambda { query_syndicate(message) },
   "config" => lambda { query_config(message) },
@@ -653,4 +662,4 @@ callbacks[operation].call()
 # Lastly, if a command was registered for this action, invoke it
 cmd = $config.dig("commands", operation) || nil
 
-system(*cmd) if (! cmd.nil?)
+system(*cmd, :err => [ "err", "w" ], :out => [ "out", "w" ]) if (! cmd.nil?)

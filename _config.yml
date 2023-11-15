@@ -7,10 +7,11 @@ media_endpoint: "http://micropub.b-ark.ca/lillipub.rb"
 token_endpoint: "https://tokens.indieauth.com/token"
 
 media_metadata: "/home/brettk/blog/assets/media.yaml"
+categories: "/home/brettk/blog-site/categories.json"
 
 commands:
   create:
-    - "/usr/bin/git --work-tree=/home/brettk/blog --git-dir=/home/brettk/git/blog/.git add -A && /usr/bin/git --work-tree=/home/brettk/blog --git-dir=/home/brettk/git/blog/.git commit -m 'Micropub post'"
+    - "/usr/bin/git --work-tree=/home/brettk/blog --git-dir=/home/brettk/git/blog add -A && /usr/bin/git --work-tree=/home/brettk/blog --git-dir=/home/brettk/git/blog commit -m 'Micropub post' && touch /home/brettk/blog/index.html"
 
 media_paths:
   images: "assets/images"
@@ -44,3 +45,4 @@ front_matter:
     date: :published
     category: :category
     in_reply_to: :in-reply-to
+    image: :photo
