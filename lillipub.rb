@@ -34,17 +34,17 @@ $cgi = nil
 # Remove the specified key from the given hash and execute the
 # block on the extracted value.
 def remove_and_do(hash, key, &block)
-  if hash.key? key
-    block.call(hash.fetch(key))
-    hash.delete(key)
-  end
+  return unless hash.key? key
+
+  block.call(hash.fetch(key))
+  hash.delete(key)
 end
 
 # Pull headers out of the environment and return as a hash.
-def get_headers()
+def get_headers
   ENV
-    .select { |k,v| k.start_with? 'HTTP_' or k == "CONTENT_TYPE" }
-    .collect { |key, val| [ key.sub(/^HTTP_/, '').downcase, val ] }
+    .select { |k, _| k.start_with? 'HTTP_' or k == "CONTENT_TYPE" }
+    .collect { |key, val| [key.sub(/^HTTP_/, '').downcase, val] }
     .to_h
 end
 
@@ -69,7 +69,7 @@ def posts_path
   File.join($config["site_location"], "_posts")
 end
 
-def list_posts(before=nil, after=nil)
+def list_posts(before = nil, after = nil)
   Dir.glob(File.join(posts_path, "*")).sort.reverse.map { |fn| File.basename(fn, ".md") }
 end
 
@@ -79,7 +79,7 @@ def read_post(id)
 
   File.open(File.join(posts_path, id) + ".md").each do |line|
     if line.start_with? "---"
-      if fm == nil
+      if fm.nil?
         fm = line
       else
         content = ""
@@ -88,7 +88,7 @@ def read_post(id)
       next
     end
 
-    if content == nil
+    if content.nil?
       fm += line
     else
       content += line
@@ -103,7 +103,7 @@ def read_post(id)
   }
 
   $config["front_matter"]["all"].each do |key, val|
-    if val.instance_of? Symbol and val.id2name == "type"
+    if val.instance_of?(Symbol) && val.id2name == "type"
       post[:type] = post[:front_matter][key]
     end
   end
@@ -127,13 +127,13 @@ end
 ##
 
 # Returns the URL parameters encoded as the equivalent JSON body.
-def decode_entry_url_params()
+def decode_entry_url_params
   message = {
     "type" => "h-entry",
     "properties" => {}
   }
 
-  $cgi.params.keys.each do | key |
+  $cgi.params.each_key do |key|
     message["properties"][key.sub(/\[\]$/, "")] = $cgi.params[key]
   end
 
@@ -148,7 +148,7 @@ end
 ##
 
 def authenticate(headers)
-  if ! headers.key? "authorization"
+  if !headers.key? "authorization"
     $log.error("No authorization header provided.");
 
     return false
@@ -178,7 +178,7 @@ def authenticate(headers)
   elsif response.code == 0
     $log.error(response.curl_error_message)
   else
-    $log.error("HTTP Error: " + response.code.to_s);
+    $log.error("HTTP Error: #{response.code}");
   end
 
   false
@@ -212,7 +212,7 @@ def query_timeline(message)
   paging = {}
   response = { "items" => items, "paging" => paging }
 
-  ids = list_posts()
+  ids = list_posts
 
   start_idx = 0
   end_idx = 5
@@ -236,7 +236,7 @@ def query_timeline(message)
     mappings = get_mappings(post[:type], post[:category])
 
     mappings.each do |key, val|
-      if val.instance_of? Symbol and post[:front_matter].key? key
+      if val.instance_of?(Symbol) && post[:front_matter].key?(key)
         item[val.id2name] = post[:front_matter][key]
       end
     end
@@ -274,13 +274,13 @@ end
 ## Micropub query operations
 ##
 
-def decode_query_url_params()
+def decode_query_url_params
   message = $cgi.params
 
-  keys = [ "action", "before", "after", "channel" ]
+  keys = ["action", "before", "after", "channel"]
 
   keys.each do |key|
-    if message.fetch(key, "").class == Array
+    if message.fetch(key, "").instance_of?(Array)
       message[key] = message[key].first
     end
   end
@@ -288,23 +288,19 @@ def decode_query_url_params()
   message
 end
 
-def decode_upload_params()
-  file = $cgi.params["file"].first
-
-  message = { "file" => file }
-
-  return message
+def decode_upload_params
+  { "file" => $cgi.params["file"].first }
 end
 
 def decode_params(cgi, body)
-  if cgi.params.key? "h"
-    return decode_entry_url_params()
-  elsif cgi.params.key? "q" or $cgi.params.key? "action"
-    return decode_query_url_params()
-  elsif cgi.params.key? "file"
-    return decode_upload_params()
+  if cgi.params.key?("h")
+    decode_entry_url_params
+  elsif cgi.params.key?("q") || $cgi.params.key?("action")
+    decode_query_url_params
+  elsif cgi.params.key?("file")
+    decode_upload_params
   else
-    return body
+    body
   end
 end
 
@@ -329,7 +325,7 @@ end
 # front matter remapping operation.
 def scrub(hash)
   first = lambda { |val|
-    if val.class == Array
+    if val.instance_of?(Array)
       val.first
     else
       val
@@ -338,12 +334,12 @@ def scrub(hash)
 
   transformers = {
     "type" => first, "name" => first, "summary" => first, "content" => first,
-    "bookmark-of" => first, "like-of" => first, "repost-of" => first, "in-reply-to"=> first,
+    "bookmark-of" => first, "like-of" => first, "repost-of" => first, "in-reply-to" => first,
     "published" => lambda { |val| Time.parse(first.call(val)) },
     "read-of" => first, "read-status" => first
   }
 
-  hash.keys.each do |key|
+  hash.each_key do |key|
     if transformers.key? key
       hash[key] = transformers[key].call(hash[key])
     end
@@ -356,7 +352,7 @@ def normalize_properties(message)
 
   message["properties"]["content"] ||= ""
 
-  if ! (message["properties"].key? "published")
+  if !message["properties"].key?("published")
     message["properties"]["published"] = Time.now
   end
 
@@ -411,9 +407,9 @@ def normalize_properties(message)
 
   message["slug"] =
     message["properties"]["name"]
-      .gsub(/[^A-Za-z0-9-]+/, '-')
-      .gsub(/-*$/, '')
-      .downcase
+    .gsub(/[^A-Za-z0-9-]+/, '-')
+    .gsub(/-*$/, '')
+    .downcase
 
   if message["slug"] == ""
     message["slug"] = Time.now.strftime("%H-%M-%S")
@@ -435,14 +431,14 @@ def process_photos(message, post)
 
     image = { "path" => file[:relative_url] }
 
-    if not (alts[index] || "").empty?
+    if !(alts[index] || "").empty?
       image["alt"] = alts[index]
     end
 
     images.push(image)
   end
 
-  return images
+  images
 end
 
 def to_post(message)
@@ -460,17 +456,16 @@ def to_post(message)
   post[:front_matter]["date"] = date
 
   get_mappings(post[:type], message["properties"]["category"]).each do |key, val|
-    if val.instance_of? Symbol
+    if val.instance_of?(Symbol)
       source_key = val.id2name
 
-      if message["properties"].key? source_key
-        if (source_key == "photo")
-          source_val = process_photos(message, post)
-        else
-          source_val = message["properties"][source_key]
-        end
-
-        post[:front_matter][key] = source_val
+      if message["properties"].key?(source_key)
+        post[:front_matter][key] =
+          if source_key == "photo"
+            process_photos(message, post)
+          else
+            message["properties"][source_key]
+          end
       end
     else
       post[:front_matter][key] = val
@@ -509,10 +504,10 @@ end
 ##
 
 def store_file(file, post_id)
-  temp = Tempfile.new()
+  temp = Tempfile.new
 
   begin
-    IO::copy_stream(file, temp)
+    IO.copy_stream(file, temp)
     temp.close
     temp.open
 
@@ -523,7 +518,7 @@ def store_file(file, post_id)
     uuid = SecureRandom.uuid
 
     media_path = $config.dig("media_paths", mimetype.image? ? "images" : "files")
-    filename = uuid + "." + mimetype.extensions.last
+    filename = "#{uuid}.#{mimetype.extensions.last}"
 
     path = File.join($config["site_location"], media_path, filename)
     relative_url = "/" + File.join(media_path, filename)
@@ -549,9 +544,9 @@ def store_file(file, post_id)
       f.puts YAML.dump(metadata)
     }
 
-    IO::copy_stream(temp.path, path)
+    IO.copy_stream(temp.path, path)
 
-    return record
+    record
   ensure
     temp.close
     temp.unlink
@@ -591,11 +586,11 @@ headers = get_headers
 body = nil
 
 $log.info(headers)
-if ! headers.key? "content_type" or
-   ! (headers["content_type"].start_with? "multipart/form-data" or
-      headers["content_type"].start_with? "application/x-www-form-urlencoded")
+if !headers.key?("content_type") ||
+   !(headers["content_type"].start_with?("multipart/form-data") ||
+     headers["content_type"].start_with?("application/x-www-form-urlencoded"))
   begin
-    stdin = STDIN.read
+    stdin = $stdin.read
 
     if stdin != ""
       body = JSON.parse(stdin)
@@ -639,27 +634,28 @@ callbacks = {
   "last" => lambda { query_last(message) }
 }
 
-if $cgi.params.key? "q"
-  # For syndicate-to, config, source, etc.
+operation =
+  if $cgi.params.key?("q")
+    # For syndicate-to, config, source, etc.
 
-  operation = $cgi.params["q"].first
-elsif $cgi.params.key? "action"
-  # For update/delete operations
+    $cgi.params["q"].first
+  elsif $cgi.params.key?("action")
+    # For update/delete operations
 
-  operation = message["action"]
-elsif $cgi.params.key? "file"
-  # This is a file upload!
+    message["action"]
+  elsif $cgi.params.key?("file")
+    # This is a file upload!
 
-  operation = "upload"
-else
-  # Default when we get a straight post of content.
+    "upload"
+  else
+    # Default when we get a straight post of content.
 
-  operation = "create"
-end
+    "create"
+  end
 
-callbacks[operation].call()
+callbacks[operation].call
 
 # Lastly, if a command was registered for this action, invoke it
 cmd = $config.dig("commands", operation) || nil
 
-system(*cmd, :err => [ "err", "w" ], :out => [ "out", "w" ]) if (! cmd.nil?)
+system(*cmd, :err => ["err", "w"], :out => ["out", "w"]) if !cmd.nil?
