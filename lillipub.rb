@@ -218,6 +218,11 @@ end
 ## Authentication
 ##
 
+# Normalize an identity url for comparison: drop trailing slashes and case.
+def normalize_url(url)
+  url.to_s.sub(%r{/+\z}, "").downcase
+end
+
 def authenticate(headers)
   if !headers.key? "authorization"
     $log.error("No authorization header provided.");
@@ -243,7 +248,11 @@ def authenticate(headers)
 
     $log.debug(auth_response);
 
-    return true
+    me = auth_response["me"]
+
+    return true if normalize_url(me) == normalize_url($config["site_url"])
+
+    $log.error("Token identity #{me.inspect} is not authorized for #{$config['site_url']}")
   elsif response.timed_out?
     $log.error("Request timed out.")
   elsif response.code == 0

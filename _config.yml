@@ -1,6 +1,6 @@
 log_path: "lillipub.log"
 
-site_url: "http://blog.b-ark.ca"
+site_url: "https://b-ark.ca"
 site_location: "/home/brettk/blog"
 source_location: "/home/brettk/git/blog"
 
