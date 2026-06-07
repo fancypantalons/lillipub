@@ -126,6 +126,13 @@ def write_post(post)
   }
 end
 
+# Convert a post URL back into its corresponding post id.
+def url_to_id(url)
+  parts = url.sub($config["site_url"], "").split("/").reject { |part| part.empty? }
+
+  parts[0..-2].join("-") + "-" + parts.last
+end
+
 #############################
 ##
 ## Argument parsing
@@ -145,6 +152,13 @@ def decode_entry_url_params
   message["properties"].delete("h")
 
   message
+end
+
+# Extract the (possibly array-wrapped) url from a request message.
+def message_url(message)
+  url = message["url"]
+
+  url.instance_of?(Array) ? url.first : url
 end
 
 #############################
@@ -318,6 +332,27 @@ def query_config(message)
 end
 
 def query_source(message)
+  post = read_post(url_to_id(message_url(message)))
+  mappings = get_mappings(post[:type], post[:category])
+
+  properties = {}
+
+  mappings.each do |key, val|
+    if val.instance_of?(Symbol) && post[:front_matter].key?(key)
+      value = post[:front_matter][key]
+      properties[val.id2name] = value.instance_of?(Array) ? value : [value]
+    end
+  end
+
+  properties["content"] = [post[:content]]
+
+  response = {
+    "type" => ["h-entry"],
+    "properties" => properties
+  }
+
+  print $cgi.header("content-type" => "application/json")
+  print response.to_json
 end
 
 #############################
@@ -496,10 +531,71 @@ def create(message)
 end
 
 def update(message)
+  post = read_post(url_to_id(message_url(message)))
+  mappings = get_mappings(post[:type], post[:category])
+
+  # Build a reverse index from Micropub property to front matter key.
+  index = {}
+  mappings.each do |key, val|
+    index[val.id2name] = key if val.instance_of?(Symbol)
+  end
+
+  remove_and_do(message, "replace") do |props|
+    props.each do |prop, vals|
+      if prop == "content"
+        post[:content] = vals.first
+      elsif index.key? prop
+        key = index[prop]
+        post[:front_matter][key] =
+          post[:front_matter][key].instance_of?(Array) ? vals : vals.first
+      end
+    end
+  end
+
+  remove_and_do(message, "add") do |props|
+    props.each do |prop, vals|
+      if prop == "content"
+        post[:content] += vals.first
+      elsif index.key? prop
+        key = index[prop]
+        existing = post[:front_matter][key] || []
+        existing = [existing] unless existing.instance_of?(Array)
+        post[:front_matter][key] = existing + vals
+      end
+    end
+  end
+
+  remove_and_do(message, "delete") do |props|
+    if props.instance_of?(Array)
+      props.each do |prop|
+        if prop == "content"
+          post[:content] = ""
+        elsif index.key? prop
+          post[:front_matter].delete(index[prop])
+        end
+      end
+    else
+      props.each do |prop, vals|
+        next unless index.key? prop
+
+        key = index[prop]
+        post[:front_matter][key] = (post[:front_matter][key] || []) - vals
+      end
+    end
+  end
+
+  $log.debug(post)
+
+  write_post(post)
+
   print $cgi.header
 end
 
 def delete(message)
+  path = File.join(posts_path, url_to_id(message_url(message))) + ".md"
+
+  File.delete(path) if File.exist?(path)
+
   print $cgi.header
 end
 
@@ -645,7 +741,11 @@ operation =
 
     $cgi.params["q"].first
   elsif $cgi.params.key?("action")
-    # For update/delete operations
+    # For form-encoded update/delete operations
+
+    message["action"]
+  elsif message.instance_of?(Hash) && message.key?("action")
+    # For JSON-encoded update/delete operations
 
     message["action"]
   elsif $cgi.params.key?("file")
