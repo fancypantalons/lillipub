@@ -182,7 +182,7 @@ end
 def url_to_id(url)
   parts = url.sub($config["site_url"], "").split("/").reject { |part| part.empty? }
 
-  parts[0..-2].join("-") + "-" + parts.last
+  parts[0..-2].join("-") + "-" + File.basename(parts.last, ".*")
 end
 
 #############################
