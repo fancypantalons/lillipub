@@ -103,8 +103,13 @@ def read_post(id)
   }
 
   $config["front_matter"]["all"].each do |key, val|
-    if val.instance_of?(Symbol) && val.id2name == "type"
-      post[:type] = post[:front_matter][key]
+    if val.instance_of?(Symbol)
+      case val.id2name
+      when "type"
+        post[:type] = post[:front_matter][key]
+      when "category"
+        post[:category] = post[:front_matter][key]
+      end
     end
   end
 
@@ -249,7 +254,7 @@ def query_timeline(message)
   end
 
   if start_idx > 0
-    paging["before"] = id[start_idx]
+    paging["before"] = ids[start_idx]
   end
 
   if end_idx < ids.length - 1
@@ -569,7 +574,7 @@ def query_last(message)
   rescue
   end
 
-  if (Time.now - last[:date]) < 300
+  if !last.nil? && (Time.now - last[:date]) < 300
     response["url"] = last[:url]
   end
 
