@@ -227,7 +227,7 @@ def authenticate(headers)
   if !headers.key? "authorization"
     $log.error("No authorization header provided.");
 
-    return false
+    return nil
   end
 
   url = $config["token_endpoint"]
@@ -250,7 +250,7 @@ def authenticate(headers)
 
     me = auth_response["me"]
 
-    return true if normalize_url(me) == normalize_url($config["site_url"])
+    return auth_response if normalize_url(me) == normalize_url($config["site_url"])
 
     $log.error("Token identity #{me.inspect} is not authorized for #{$config['site_url']}")
   elsif response.timed_out?
@@ -261,7 +261,26 @@ def authenticate(headers)
     $log.error("HTTP Error: #{response.code}");
   end
 
-  false
+  nil
+end
+
+# The token scopes accepted for a given operation, or nil if the operation
+# needs only a valid token.  Any one of the listed scopes is sufficient.
+def required_scopes(operation)
+  {
+    "create" => ["create", "post"],
+    "update" => ["update"],
+    "delete" => ["delete"],
+    "upload" => ["media"]
+  }[operation]
+end
+
+# Check whether the token grants any of the accepted scopes.
+def scope_granted?(auth, accepted)
+  scopes = auth["scope"]
+  scopes = scopes.to_s.split unless scopes.instance_of?(Array)
+
+  accepted.any? { |scope| scopes.include?(scope) }
 end
 
 #############################
@@ -787,7 +806,9 @@ message = decode_params($cgi, body)
 
 $log.info("Message: #{message}")
 
-if !authenticate(headers)
+auth = authenticate(headers)
+
+if auth.nil?
   print $cgi.header("status" => "401 Unauthorized");
   exit(0);
 end
@@ -830,6 +851,14 @@ operation =
 
     "create"
   end
+
+accepted = required_scopes(operation)
+
+if !accepted.nil? && !scope_granted?(auth, accepted)
+  $log.error("Token scope #{auth['scope'].inspect} does not permit '#{operation}'")
+  print $cgi.header("status" => "403 Forbidden");
+  exit(0);
+end
 
 callbacks[operation].call
 
