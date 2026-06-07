@@ -1,7 +1,8 @@
 log_path: "lillipub.log"
 
-site_location: "/home/brettk/blog"
 site_url: "http://blog.b-ark.ca"
+site_location: "/home/brettk/blog"
+source_location: "/home/brettk/git/blog"
 
 media_endpoint: "http://micropub.b-ark.ca/lillipub.rb"
 token_endpoint: "https://tokens.indieauth.com/token"
@@ -9,9 +10,16 @@ token_endpoint: "https://tokens.indieauth.com/token"
 media_metadata: "/home/brettk/blog/assets/media.yaml"
 categories: "/home/brettk/blog-site/categories.json"
 
+git_cmd: "/usr/bin/git --work-tree=%{site_location} --git-dir=%{source_location}"
+git_hook: "%{git_cmd} add %{path} && %{git_cmd} commit -m 'Micropub %{operation}' && touch %{site_location}/index.html"
+
 commands:
   create:
-    - "/usr/bin/git --work-tree=/home/brettk/blog --git-dir=/home/brettk/git/blog add -A && /usr/bin/git --work-tree=/home/brettk/blog --git-dir=/home/brettk/git/blog commit -m 'Micropub post' && touch /home/brettk/blog/index.html"
+    - "%{git_hook}"
+  update:
+    - "%{git_hook}"
+  delete:
+    - "%{git_hook}"
 
 media_paths:
   images: "assets/images"

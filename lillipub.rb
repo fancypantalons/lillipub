@@ -18,6 +18,7 @@ require "cgi"
 require "time"
 require "logger"
 require "securerandom"
+require "shellwords"
 
 $config = YAML.load_file("_config.yml")
 
@@ -25,6 +26,19 @@ $log = Logger.new($config["log_path"]);
 $log.level = Logger::DEBUG
 
 $cgi = nil
+
+# Substitution variables made available to the command hooks, seeded with
+# every top-level scalar config key so the user can define their own.
+# Operations add others (id, url, path) as appropriate.  $written holds the
+# list of files an operation wrote or removed, exposed as %{path}.
+$vars = $config.reject { |_, val| val.instance_of?(Hash) || val.instance_of?(Array) }
+
+# Config-defined variables are trusted: they may recursively reference one
+# another, and their literal text is treated as shell syntax.  Values added
+# later by operations (id, url, path) are not trusted and are always escaped.
+$trusted = $vars.keys
+
+$written = []
 
 #############################
 ##
@@ -60,6 +74,38 @@ def get_mappings(type, categories)
   mappings
 end
 
+# Shell-escape a value for safe inclusion as a single command argument.
+def escape_value(value)
+  value = value.to_s
+
+  value.empty? ? "" : Shellwords.escape(value)
+end
+
+# Recursively expand %{...} references in a command hook string.  Variables
+# defined in the config ($trusted) may themselves contain references and are
+# expanded as trusted shell text, with only their leaf values escaped.  The
+# pre-escaped file list (%{path}) and operation-provided values (id, url) are
+# always escaped and never expanded further, so client-supplied data cannot
+# inject shell syntax.  Cyclic references expand to an empty string.
+def expand(text, seen = [])
+  text.gsub(/%\{(\w+)\}/) do
+    name = Regexp.last_match(1)
+
+    if name == "path"
+      $vars["path"]
+    elsif !$trusted.include?(name)
+      escape_value($vars[name])
+    elsif seen.include?(name)
+      $log.error("Cyclic substitution variable: #{name}")
+      ""
+    else
+      value = $vars.fetch(name, "").to_s
+
+      value.include?("%{") ? expand(value, seen + [name]) : escape_value(value)
+    end
+  end
+end
+
 #############################
 ##
 ## Post listing, retrieval, and management
@@ -67,6 +113,10 @@ end
 
 def posts_path
   File.join($config["site_location"], "_posts")
+end
+
+def post_path(id)
+  File.join(posts_path, id) + ".md"
 end
 
 def list_posts(before = nil, after = nil)
@@ -77,7 +127,7 @@ def read_post(id)
   fm = nil
   content = nil
 
-  File.open(File.join(posts_path, id) + ".md").each do |line|
+  File.open(post_path(id)).each do |line|
     if line.start_with? "---"
       if fm.nil?
         fm = line
@@ -117,13 +167,15 @@ def read_post(id)
 end
 
 def write_post(post)
-  path = File.join($config["site_location"], "_posts", post[:id]) + ".md"
+  path = post_path(post[:id])
 
   File.open(path, "w") { |file|
     file.write(post[:front_matter].to_yaml)
     file.write("---\n")
     file.write(post[:content])
   }
+
+  $written << path
 end
 
 # Convert a post URL back into its corresponding post id.
@@ -528,6 +580,9 @@ def create(message)
 
   print $cgi.header("status" => "201 Created", "Location" => url)
   write_post(post)
+
+  $vars["id"] = post[:id]
+  $vars["url"] = url
 end
 
 def update(message)
@@ -588,13 +643,20 @@ def update(message)
 
   write_post(post)
 
+  $vars["id"] = post[:id]
+  $vars["url"] = message_url(message)
+
   print $cgi.header
 end
 
 def delete(message)
-  path = File.join(posts_path, url_to_id(message_url(message))) + ".md"
+  path = post_path(url_to_id(message_url(message)))
 
   File.delete(path) if File.exist?(path)
+  $written << path
+
+  $vars["id"] = url_to_id(message_url(message))
+  $vars["url"] = message_url(message)
 
   print $cgi.header
 end
@@ -646,6 +708,8 @@ def store_file(file, post_id)
     }
 
     IO.copy_stream(temp.path, path)
+
+    $written << path
 
     record
   ensure
@@ -760,7 +824,22 @@ operation =
 
 callbacks[operation].call
 
-# Lastly, if a command was registered for this action, invoke it
+# Lastly, if a command was registered for this action, invoke it.  The
+# command may reference any of the substitution variables (e.g. %{operation},
+# %{path}, %{id}, %{url}), where %{path} is the space-separated list of files
+# the operation wrote or removed.
 cmd = $config.dig("commands", operation) || nil
 
-system(*cmd, :err => ["err", "w"], :out => ["out", "w"]) if !cmd.nil?
+if !cmd.nil?
+  $vars["operation"] = operation
+
+  # Each written file is escaped individually so that multiple files remain
+  # separate shell arguments, while spaces or shell metacharacters within
+  # any single path (notably ids derived from a client-supplied url) cannot
+  # break out of the command.
+  $vars["path"] = $written.map { |file| Shellwords.escape(file) }.join(" ")
+
+  cmd = cmd.map { |part| expand(part) }
+
+  system(*cmd, :err => ["err", "w"], :out => ["out", "w"])
+end
