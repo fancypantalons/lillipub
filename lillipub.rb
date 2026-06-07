@@ -96,7 +96,7 @@ def read_post(id)
   end
 
   post = {
-    :front_matter => YAML.load(fm),
+    :front_matter => YAML.unsafe_load(fm),
     :content => content,
     :slug => id.split("-").last,
     :id => id
@@ -525,7 +525,7 @@ def store_file(file, post_id)
     url = File.join($config["site_url"], relative_url)
 
     begin
-      metadata = YAML.load_file($config["media_metadata"]) || []
+      metadata = YAML.unsafe_load_file($config["media_metadata"]) || []
     rescue
       metadata = []
     end
@@ -564,7 +564,7 @@ def query_last(message)
   last = nil
 
   begin
-    metadata = YAML.load_file($config["media_metadata"]) || []
+    metadata = YAML.unsafe_load_file($config["media_metadata"]) || []
     last = metadata.last
   rescue
   end
