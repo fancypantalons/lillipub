@@ -288,22 +288,16 @@ end
 ## Microsub operations
 ##
 
-def query_channels(message)
-  response = {
-    "channels" => [
-      {
-        "uid" => "notifications",
-        "name" => "Notifications"
-      },
-      {
-        "uid" => $config["feed"]["uid"],
-        "name" => $config["feed"]["name"]
-      }
-    ]
-  }
+def channels
+  [
+    { "uid" => "notifications", "name" => "Notifications" },
+    { "uid" => $config["feed"]["uid"], "name" => $config["feed"]["name"] }
+  ]
+end
 
+def query_channels(message)
   print $cgi.header("content-type" => "application/json")
-  print response.to_json
+  print ({ "channels" => channels }).to_json
 end
 
 def query_timeline(message)
@@ -404,11 +398,34 @@ def decode_params(cgi, body)
 end
 
 def query_syndicate(message)
+  print $cgi.header("content-type" => "application/json")
+
+  # Lillipub does not implement syndication, but advertises the (empty) list
+  # so clients see a spec-compliant response.
+  print ({ "syndicate-to" => [] }).to_json
 end
 
 def query_config(message)
+  response = {
+    "media-endpoint" => $config["media_endpoint"],
+    "syndicate-to" => [],
+    # The notifications channel is read-only (a Microsub concept); it is not a
+    # valid Micropub publishing target, so it is excluded here.
+    "channels" => channels.reject { |channel| channel["uid"] == "notifications" }.map { |channel| channel["name"] },
+    "post-types" => [
+      {"type" => "note", "name" => "Note"},
+      {"type" => "article", "name" => "Article"},
+      {"type" => "photo", "name" => "Photo"},
+      {"type" => "reply", "name" => "Reply"},
+      {"type" => "like", "name" => "Like"},
+      {"type" => "repost", "name" => "Repost"},
+      {"type" => "bookmark", "name" => "Bookmark"},
+      {"type" => "read", "name" => "Read"}
+    ]
+  }
+
   print $cgi.header("content-type" => "application/json")
-  print ({ "media-endpoint" => $config["media_endpoint"] }).to_json
+  print response.to_json
 end
 
 def query_source(message)
@@ -819,6 +836,7 @@ callbacks = {
   "delete" => lambda { delete(message) },
 
   "channels" => lambda { query_channels(message) },
+  "channel" => lambda { query_channels(message) },
   "timeline" => lambda { query_timeline(message) },
   "category" => lambda { query_categories(message) },
 
